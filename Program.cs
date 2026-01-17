@@ -67,38 +67,66 @@ foreach(var edge in edges)
 
 if (args[i] == "--route")
 {
-    string start = args[++i];
-    string end = args[++i];
-    // BFS
-    Queue<(string node, List<string> path)> queue = new();
-    queue.Enqueue((start, new List<string> { start }));
-    HashSet<string> visited = new();
-    while (queue.Count > 0)
-    {
-        var (node, path) = queue.Dequeue();
-        if (node == end)
-        {
-            Console.WriteLine(string.Join(",", path));
-            return;
-        }
-        // Console.WriteLine($"Visiting {node}");
+    i++;
+    string start = args[i];
+    i++;
+    List<string> wholeRoute = new();
 
-        visited.Add(node);
-        if (neighbors.TryGetValue(node, out var neighborList))
+    while(i < args.Length)
+    {
+        string end = args[i];
+
+        // BFS
+        Queue<(string node, List<string> path)> queue = new();
+        queue.Enqueue((start, new List<string> { start }));
+        HashSet<string> visited = new();
+        bool found = false;
+        while (queue.Count > 0)
         {
-            foreach (var neighbor in neighborList.OrderByDescending(n => n.Value).Select(n => n.Key))
+            var (node, path) = queue.Dequeue();
+            if (node == end)
             {
-                // Console.WriteLine($"Neighbor of {node}: {neighbor}");
-                if (!visited.Contains(neighbor))
+                if (wholeRoute.Count > 0)
                 {
-                    var newPath = new List<string>(path) { neighbor };
-                    queue.Enqueue((neighbor, newPath));
+                    wholeRoute.AddRange(path.Skip(1));
+                }
+                else
+                {
+                    wholeRoute.AddRange(path);
+                }
+                found = true;
+                break;
+            }
+            // Console.WriteLine($"Visiting {node}");
+
+            visited.Add(node);
+            if (neighbors.TryGetValue(node, out var neighborList))
+            {
+                foreach (var neighbor in neighborList.OrderByDescending(n => n.Value).Select(n => n.Key))
+                {
+                    // Console.WriteLine($"Neighbor of {node}: {neighbor}");
+                    if (!visited.Contains(neighbor))
+                    {
+                        var newPath = new List<string>(path) { neighbor };
+                        queue.Enqueue((neighbor, newPath));
+                    }
                 }
             }
         }
+
+        if (found)
+        {
+            start = end;
+            i++;
+        }
+        else
+        {
+            Console.WriteLine("No route found");
+            return;
+        }
     }
 
-    Console.WriteLine("No route found");
+    Console.WriteLine(string.Join(",", wholeRoute));
 }
 else if (args[i] == "--dgml")
 {
