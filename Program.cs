@@ -1,6 +1,16 @@
 ﻿using System.Text.Json;
 
-Dictionary<(string,string), int> edges = new();
+Dictionary<string, Node> nodes = new();
+
+Node GetOrCreateNode(string id)
+{
+    if (!nodes.ContainsKey(id))
+    {
+        nodes[id] = new Node(id);
+    }
+
+    return nodes[id];
+}
 
 List<Packet> packets = new();
 int i;
@@ -22,48 +32,54 @@ if (packets.Count == 0)
 
 foreach(var packet in packets!)
 {
-    List<string> path = packet.path.ToList();
-    path.Add(packet.origin_id.Substring(0,2).ToLowerInvariant());
+    packet.path.Add(packet.origin_id.Substring(0,2).ToLowerInvariant());
 
-    if (path.Count < 2)
-    {
-        continue;
-    }
+    string sender = packet.path.First();
 
-    string sender = path.First();
-
-    foreach(var receiver in path.Skip(1))
+    foreach(var receiver in packet.path.Skip(1))
     {
         if (sender != receiver)
         {
-            var key = (sender, receiver);
-            if (edges.ContainsKey(key))
-            {
-                edges[key]++;
-            }
-            else
-            {
-                edges[key] = 1;
-            }
+            var senderNode = GetOrCreateNode(sender);
+            senderNode.GetOrCreateOutgoingLink(receiver).UniquePackets.Add(packet.hash);
+            senderNode.UniquePacketsSent.Add(packet.hash);
+
+            var receiverNode = GetOrCreateNode(receiver);
+            receiverNode.GetOrCreateIncomingLink(sender).UniquePackets.Add(packet.hash);
+            receiverNode.UniquePacketsReceived.Add(packet.hash);
         }
 
         sender = receiver;
     }
 }
 
-
-
-Dictionary<string, Dictionary<string, int>> neighbors = new();
-foreach(var edge in edges)
+foreach(var node in nodes.Values)
 {
-    if (!neighbors.ContainsKey(edge.Key.Item1))
+    if (node.OutgoingLinks.Count == 0)
     {
-        neighbors.Add(edge.Key.Item1, new Dictionary<string, int>());
+        continue;
     }
 
-    neighbors[edge.Key.Item1].Add(edge.Key.Item2, edge.Value);
+    int totalWeight = node.OutgoingLinks.Values.Max(l => l.UniquePackets.Count);
+    foreach(var link in node.OutgoingLinks.Values)
+    {
+        link.NormalizedWeight = (double)link.UniquePackets.Count / totalWeight;
+    }
 }
 
+foreach(var node in nodes.Values)
+{
+    if (node.IncomingLinks.Count == 0)
+    {
+        continue;
+    }
+    
+    int totalWeight = node.IncomingLinks.Values.Max(l => l.UniquePackets.Count);
+    foreach(var link in node.IncomingLinks.Values)  
+    {
+        link.NormalizedWeight = (double)link.UniquePackets.Count / totalWeight;
+    }
+}
 
 if (args[i] == "--route")
 {
@@ -74,17 +90,17 @@ if (args[i] == "--route")
 
     while(i < args.Length)
     {
-        string end = args[i];
+        string endId = args[i];
 
         // BFS
-        Queue<(string node, List<string> path)> queue = new();
+        Queue<(string nodeId, List<string> path)> queue = new();
         queue.Enqueue((start, new List<string> { start }));
         HashSet<string> visited = new();
         bool found = false;
         while (queue.Count > 0)
         {
-            var (node, path) = queue.Dequeue();
-            if (node == end)
+            var (nodeId, path) = queue.Dequeue();
+            if (nodeId == endId)
             {
                 if (wholeRoute.Count > 0)
                 {
@@ -99,10 +115,10 @@ if (args[i] == "--route")
             }
             // Console.WriteLine($"Visiting {node}");
 
-            visited.Add(node);
-            if (neighbors.TryGetValue(node, out var neighborList))
+            visited.Add(nodeId);
+            if (nodes.TryGetValue(nodeId, out var node))
             {
-                foreach (var neighbor in neighborList.OrderByDescending(n => n.Value).Select(n => n.Key))
+                foreach (var neighbor in node.OutgoingLinks.OrderByDescending(n => n.Value.NormalizedWeight).Select(n => n.Key))
                 {
                     // Console.WriteLine($"Neighbor of {node}: {neighbor}");
                     if (!visited.Contains(neighbor))
@@ -116,7 +132,7 @@ if (args[i] == "--route")
 
         if (found)
         {
-            start = end;
+            start = endId;
             i++;
         }
         else
@@ -135,18 +151,30 @@ else if (args[i] == "--dgml")
     writer.WriteLine("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
     writer.WriteLine("<DirectedGraph Title=\"MC\" xmlns=\"http://schemas.microsoft.com/vs/2009/dgml\">");
     writer.WriteLine("<Nodes>");
-    foreach(var node in edges.Keys.SelectMany(e => new[] { e.Item1, e.Item2 }).Distinct())
+    foreach(var node in nodes.Values)
     {
-        writer.WriteLine($"  <Node Id=\"{node}\" Label=\"{node}\" />");
+        writer.WriteLine($"  <Node Id=\"{node.Id}\" Label=\"{node.Id}: -&gt;{node.UniquePacketsReceived.Count} &lt;-{node.UniquePacketsSent.Count}\" />");
     }
     writer.WriteLine("</Nodes>");
     writer.WriteLine("<Links>");
-    foreach(var edge in edges)
+    foreach(var node in nodes.Values)
     {
-        writer.WriteLine($"  <Link Source=\"{edge.Key.Item1}\" Target=\"{edge.Key.Item2}\" Label=\"{edge.Value}\" />");
+        foreach(var link in node.OutgoingLinks.Values)
+        {
+            const int maxStrokeThickness = 4;
+            int strokeThickness = Math.Clamp((int)(link.NormalizedWeight * maxStrokeThickness), 1, maxStrokeThickness);;
+            writer.WriteLine($"  <Link Source=\"{node.Id}\" Target=\"{link.OtherId}\" Label=\"{link.UniquePackets.Count}\" StrokeThickness=\"{strokeThickness}\"/>");
+        }
     }
     writer.WriteLine("</Links>");
     writer.WriteLine("</DirectedGraph>");
+}
+else if (args[i] == "--print")
+{
+    foreach(var packet in packets.OrderBy(p => p.hash))
+    {
+        Console.WriteLine($"{packet.hash}: " + string.Join(",", packet.path));
+    }
 }
 else
 {
@@ -158,6 +186,55 @@ else
 
 struct Packet
 {
-    public string[] path {get;set;}
+    public string hash {get;set;}
+    public List<string> path {get;set;}
     public string origin_id {get;set;}
+}
+
+class Link
+{
+    public string OtherId {get;set;}
+
+    public Link(string otherId)
+    {
+        OtherId = otherId;
+    }
+
+    public HashSet<string> UniquePackets = new();
+    public double NormalizedWeight {get;set;}
+}
+
+class Node
+{
+    public HashSet<string> UniquePacketsSent = new();
+    public HashSet<string> UniquePacketsReceived = new();
+    public string Id {get;set;}
+
+    public Node(string id)
+    {
+        Id = id;
+    }
+
+    public Dictionary<string, Link> OutgoingLinks = new();
+    public Dictionary<string, Link> IncomingLinks = new();
+
+    public Link GetOrCreateOutgoingLink(string targetId)
+    {
+        if (!OutgoingLinks.ContainsKey(targetId))
+        {
+            OutgoingLinks[targetId] = new Link(targetId);
+        }
+
+        return OutgoingLinks[targetId];
+    }
+
+    public Link GetOrCreateIncomingLink(string sourceId)
+    {
+        if (!IncomingLinks.ContainsKey(sourceId))
+        {
+            IncomingLinks[sourceId] = new Link(sourceId);
+        }
+
+        return IncomingLinks[sourceId];
+    }
 }
