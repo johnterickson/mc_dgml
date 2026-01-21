@@ -10,7 +10,7 @@ Step 2: analyze
 
 Commands:
 * `dgml`: dumps a DGML file to standard out
-  * Example: `dotnet run -- filtered1.json filtered2.json --dgml > nodes.dgml`
+  * Example: `dotnet run -- filtered1.json filtered2.json --dgml nodes.dgml`
   * View DGML in Visual Studio or https://marketplace.visualstudio.com/items?itemName=coderAllan.vscode-dgmlviewer
 * `route [from hex] [to hex]`: finds a route between two repeaters
   * Example: `dotnet run -- filtered1.json filtered2.json --route 7f 66` -> `7f,fa,79,78,66`

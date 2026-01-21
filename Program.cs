@@ -130,21 +130,23 @@ if (args[i] == "--route")
 }
 else if (args[i] == "--dgml")
 {
-    Console.WriteLine("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
-    Console.WriteLine("<DirectedGraph Title=\"MC\" xmlns=\"http://schemas.microsoft.com/vs/2009/dgml\">");
-    Console.WriteLine("<Nodes>");
+    string fileName = args.Length > i + 1 ? args[i + 1] : "mc.dgml";
+    using var writer = new StreamWriter(fileName);
+    writer.WriteLine("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
+    writer.WriteLine("<DirectedGraph Title=\"MC\" xmlns=\"http://schemas.microsoft.com/vs/2009/dgml\">");
+    writer.WriteLine("<Nodes>");
     foreach(var node in edges.Keys.SelectMany(e => new[] { e.Item1, e.Item2 }).Distinct())
     {
-        Console.WriteLine($"  <Node Id=\"{node}\" Label=\"{node}\" />");
+        writer.WriteLine($"  <Node Id=\"{node}\" Label=\"{node}\" />");
     }
-    Console.WriteLine("</Nodes>");
-    Console.WriteLine("<Links>");
+    writer.WriteLine("</Nodes>");
+    writer.WriteLine("<Links>");
     foreach(var edge in edges)
     {
-        Console.WriteLine($"  <Link Source=\"{edge.Key.Item1}\" Target=\"{edge.Key.Item2}\" Label=\"{edge.Value}\" />");
+        writer.WriteLine($"  <Link Source=\"{edge.Key.Item1}\" Target=\"{edge.Key.Item2}\" Label=\"{edge.Value}\" />");
     }
-    Console.WriteLine("</Links>");
-    Console.WriteLine("</DirectedGraph>");
+    writer.WriteLine("</Links>");
+    writer.WriteLine("</DirectedGraph>");
 }
 else
 {
