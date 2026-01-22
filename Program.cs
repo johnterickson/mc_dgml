@@ -32,7 +32,10 @@ if (packets.Count == 0)
 
 foreach(var packet in packets!)
 {
-    packet.path.Add(packet.origin_id.Substring(0,2).ToLowerInvariant());
+    string observer = packet.origin_id.Substring(0,2).ToLowerInvariant();
+    packet.path.Add(observer);
+
+    GetOrCreateNode(observer).IsObserver = true;
 
     string sender = packet.path.First();
 
@@ -144,6 +147,58 @@ if (args[i] == "--route")
 
     Console.WriteLine(string.Join(",", wholeRoute));
 }
+else if (args[i] == "--mqttdgml")
+{
+    string fileName = args.Length > i + 1 ? args[i + 1] : "mc.dgml";
+    using var writer = new StreamWriter(fileName);
+    writer.WriteLine("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
+    writer.WriteLine("<DirectedGraph Title=\"MC\" xmlns=\"http://schemas.microsoft.com/vs/2009/dgml\">");
+    writer.WriteLine("<Nodes>");
+    var mqttNodes = nodes.Values.Where(n => n.IsObserver).ToDictionary(n => n.Id, n => n);
+    HashSet<string> allPackets = new();
+    foreach(var node in mqttNodes.Values)
+    {
+        allPackets.UnionWith(node.UniquePacketsReceived);
+    }
+    foreach(var node in mqttNodes.Values)
+    {
+        const int maxStrokeThickness = 10;
+        double fractionOfPackets = node.UniquePacketsReceived.Count * 1.0 / allPackets.Count;
+        int strokeThickness = Math.Clamp((int)(fractionOfPackets * maxStrokeThickness), 1, maxStrokeThickness);
+        writer.WriteLine($"  <Node Id=\"{node.Id}\" Label=\"{node.Id}: -&gt;{node.UniquePacketsReceived.Count} &lt;-{node.UniquePacketsSent.Count}\" "
+            + $"StrokeThickness=\"{strokeThickness}\" "
+            + (node.IsObserver ? "Background=\"Blue\"" : "") 
+            + " />");
+    }
+    writer.WriteLine("</Nodes>");
+    writer.WriteLine("<Links>");
+    foreach(var node1 in mqttNodes.Values)
+    {
+        foreach(var node2 in mqttNodes.Values)
+        {
+            if (string.CompareOrdinal(node1.Id, node2.Id) >= 0)
+            {
+                continue;
+            }
+
+            const int maxStrokeThickness = 10;
+            HashSet<string> packetsInCommon = new();
+            packetsInCommon.UnionWith(node1.UniquePacketsReceived);
+            packetsInCommon.IntersectWith(node2.UniquePacketsReceived);
+
+            if (packetsInCommon.Count == 0)
+            {
+                continue;
+            }
+
+            double fractionOfPackets = packetsInCommon.Count * 1.0 / allPackets.Count;
+            int strokeThickness = Math.Clamp((int)(fractionOfPackets * maxStrokeThickness), 1, maxStrokeThickness);;
+            writer.WriteLine($"  <Link Source=\"{node1.Id}\" Target=\"{node2.Id}\" Label=\"{packetsInCommon.Count}\" StrokeThickness=\"{strokeThickness}\"/>");
+        }
+    }
+    writer.WriteLine("</Links>");
+    writer.WriteLine("</DirectedGraph>");
+}
 else if (args[i] == "--dgml")
 {
     string fileName = args.Length > i + 1 ? args[i + 1] : "mc.dgml";
@@ -153,7 +208,9 @@ else if (args[i] == "--dgml")
     writer.WriteLine("<Nodes>");
     foreach(var node in nodes.Values)
     {
-        writer.WriteLine($"  <Node Id=\"{node.Id}\" Label=\"{node.Id}: -&gt;{node.UniquePacketsReceived.Count} &lt;-{node.UniquePacketsSent.Count}\" />");
+        writer.WriteLine($"  <Node Id=\"{node.Id}\" Label=\"{node.Id}: -&gt;{node.UniquePacketsReceived.Count} &lt;-{node.UniquePacketsSent.Count}\" "
+            + (node.IsObserver ? "Background=\"Blue\"" : "") 
+            + " />");
     }
     writer.WriteLine("</Nodes>");
     writer.WriteLine("<Links>");
@@ -209,6 +266,7 @@ class Node
     public HashSet<string> UniquePacketsSent = new();
     public HashSet<string> UniquePacketsReceived = new();
     public string Id {get;set;}
+    public bool IsObserver { get; internal set; }
 
     public Node(string id)
     {
