@@ -21,7 +21,18 @@ for(i = 0; i < args.Length; i++)
         break;
     }
 
-    packets.AddRange(JsonSerializer.Deserialize<Packet[]>(File.ReadAllText(args[i]))!);
+    string dir = (Path.IsPathRooted(args[i]) ? Path.GetDirectoryName(args[i]) : null) ?? Environment.CurrentDirectory;
+    string pattern = Path.GetFileName(args[i]);
+    Console.WriteLine($"Loading packets from {dir} with pattern {pattern}");
+    foreach (var file in Directory.EnumerateFiles(dir, pattern))
+    {
+        Console.WriteLine($" Found file: {file}");
+        var content = File.ReadAllText(file);
+        Console.WriteLine($"  File size: {content.Length} bytes");
+        var deserializedPackets = JsonSerializer.Deserialize<Packet[]>(content);
+        Console.WriteLine($"  Deserialized {deserializedPackets?.Length ?? 0} packets");
+        packets.AddRange(deserializedPackets!);
+    }
 }
 
 if (packets.Count == 0)
@@ -84,7 +95,33 @@ foreach(var node in nodes.Values)
     }
 }
 
-if (args[i] == "--route")
+// summaries
+foreach(var node in nodes.Values)
+{
+    node.UniqueLinks = new HashSet<string>();
+    node.UniqueLinks.UnionWith(node.OutgoingLinks.Keys);
+    node.UniqueLinks.UnionWith(node.IncomingLinks.Keys);
+
+    node.UniquePackets = new HashSet<string>();
+    node.UniquePackets.UnionWith(node.UniquePacketsReceived);
+    node.UniquePackets.UnionWith(node.UniquePacketsSent);
+}
+
+if (args[i] == "--open")
+{
+    foreach(var prefix in Enumerable.Range(0, 256).Select(x => x.ToString("x2")))
+    {
+        if (nodes.TryGetValue(prefix, out var node))
+        {
+            Console.WriteLine($"Node {prefix}: {node.UniquePackets.Count} packets seen. {node.UniqueLinks.Count} links.");
+        }
+        else
+        {
+            Console.WriteLine($"Node {prefix}: AVAILABLE");
+        }
+    }
+}
+else if (args[i] == "--route")
 {
     i++;
     string start = args[i];
@@ -267,6 +304,8 @@ class Node
     public HashSet<string> UniquePacketsReceived = new();
     public string Id {get;set;}
     public bool IsObserver { get; internal set; }
+    public HashSet<string> UniqueLinks { get; internal set; }
+    public HashSet<string> UniquePackets { get; internal set; }
 
     public Node(string id)
     {
